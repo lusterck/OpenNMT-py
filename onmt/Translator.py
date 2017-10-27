@@ -7,6 +7,7 @@ import onmt.ModelConstructor
 import onmt.modules
 import onmt.IO
 from onmt.Utils import use_gpu
+from onmt.modules.VAE_Models import VAEModel
 
 
 class Translator(object):
@@ -95,8 +96,15 @@ class Translator(object):
         _, src_lengths = batch.src
         src = onmt.IO.make_features(batch, 'src')
         encStates, context = self.model.encoder(src, src_lengths)
-        decStates = self.model.decoder.init_decoder_state(
-                                        src, context, encStates)
+
+        if isinstance(self.model, VAEModel):
+
+            z =Variable(torch.randn(src.size(1),self.model.vae_encoder.hidden_code_len)).cuda()
+            decStates = self.model.decoder.init_decoder_state(src, context, encStates,z)    
+                
+        else:
+            decStates = self.model.decoder.init_decoder_state(src, context, encStates)
+            
 
         #  (1b) Initialize for the decoder.
         def var(a): return Variable(a, volatile=True)

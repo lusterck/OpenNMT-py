@@ -185,3 +185,78 @@ def shards(state, shard_size, eval=False):
                      if isinstance(v, Variable) and v.grad is not None)
         inputs, grads = zip(*variables)
         torch.autograd.backward(inputs, grads)
+
+class VAELossCompute(LossComputeBase):
+    """
+    Standard NMT Loss Computation.
+    """
+    def __init__(self, generator, tgt_vocab):
+        super(VAELossCompute, self).__init__(generator, tgt_vocab)
+
+        weight = torch.ones(len(tgt_vocab))
+        weight[self.padding_idx] = 0
+        self.criterion = nn.NLLLoss(weight, size_average=False)
+        self.kld_start_inc = 10000
+        self.kld_weight = 0.01
+        self.kld_max = 0.1
+        self.kld_inc = 0.000002
+        self.temperature = 0.9
+        self.temperature_min = 0.5
+        self.temperature_dec = 0.000002
+
+    def make_shard_state(self, batch, output, range_, attns, mu, logvar, z):
+        """ See base class for args description. """
+        return {
+            "output": output,
+            "target": batch.tgt[range_[0] + 1: range_[1]],
+            "mu": mu, 
+            "logvar": logvar,
+            "z":z
+        }
+
+    def compute_loss(self, batch, output, target, mu, logvar, z):
+        """ See base class for args description. """
+        scores = self.generator(self.bottle(output))
+        scores_data = scores.data.clone()
+
+        target = target.view(-1)
+        target_data = target.data.clone()
+
+        loss = self.criterion(scores, target) 
+        loss_data = loss.data.clone()
+        KLD = (-0.5 * torch.sum(logvar - torch.pow(mu, 2) - torch.exp(logvar) + 1, 1)).mean().squeeze()
+        loss += KLD * self.kld_weight
+
+        # if epoch > self.kld_start_inc and self.kld_weight < self.kld_max:
+        #     self.kld_weight += self.kld_inc
+
+        stats = self.stats(loss_data, scores_data, target_data)
+
+        return loss, stats
+
+
+    def sharded_compute_loss(self, batch, output, attns,
+                             cur_trunc, trunc_size, shard_size, mu, logvar, z):
+        """
+        Compute the loss in shards for efficiency.
+        """
+        batch_stats = onmt.Statistics()
+        range_ = (cur_trunc, cur_trunc + trunc_size)
+        shard_state = self.make_shard_state(batch, output, range_, attns, mu, logvar, z)
+
+        for shard in shards(shard_state, shard_size):
+            loss, stats = self.compute_loss(batch, **shard)
+            loss.div(batch.batch_size).backward()
+            batch_stats.update(stats)
+
+        return batch_stats
+
+    def monolithic_compute_loss(self, batch, output, attns, mu, logvar, z):
+        """
+        Compute the loss monolithically, not dividing into shards.
+        """
+        range_ = (0, batch.tgt.size(0))
+        shard_state = self.make_shard_state(batch, output, range_, attns, mu, logvar, z)
+        _, batch_stats = self.compute_loss(batch, **shard_state)
+
+        return batch_stats

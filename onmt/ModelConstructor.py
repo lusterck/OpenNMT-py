@@ -13,7 +13,9 @@ from onmt.Models import NMTModel, MeanEncoder, RNNEncoder, \
 from onmt.modules import Embeddings, ImageEncoder, CopyGenerator, \
                          TransformerEncoder, TransformerDecoder, \
                          CNNEncoder, CNNDecoder
+from onmt.modules.VAE_Models import VAERNNDecoder,VAERNNEncoder,VAEModel
 
+HIDDEN_CODE_LEN= 50
 
 def make_embeddings(opt, word_dict, feature_dicts, for_encoder=True):
     """
@@ -65,9 +67,19 @@ def make_encoder(opt, embeddings):
                           opt.dropout, embeddings)
     elif opt.encoder_type == "mean":
         return MeanEncoder(opt.enc_layers, embeddings)
+    
+    elif opt.encoder_type == "vaernn":
+        # "rnn" or "brnn"
+        print(opt.brnn)
+        print(opt.enc_layers)
+        
+        return RNNEncoder(opt.rnn_type, opt.brnn, opt.enc_layers,
+                          opt.rnn_size, opt.dropout, embeddings)
+
+
     else:
         # "rnn" or "brnn"
-        return RNNEncoder(opt.rnn_type, opt.brnn, opt.dec_layers,
+        return RNNEncoder(opt.rnn_type, opt.brnn, opt.enc_layers,
                           opt.rnn_size, opt.dropout, embeddings)
 
 
@@ -87,9 +99,18 @@ def make_decoder(opt, embeddings):
                           opt.global_attention, opt.copy_attn,
                           opt.cnn_kernel_width, opt.dropout,
                           embeddings)
+    elif opt.decoder_type == "vaernn":
+        return VAERNNDecoder(opt.rnn_type, opt.brnn,
+                             opt.dec_layers, opt.rnn_size,
+                             opt.global_attention,
+                             opt.coverage_attn,
+                             opt.context_gate,
+                             opt.copy_attn,
+                             opt.dropout,
+                             embeddings, hidden_code_len=HIDDEN_CODE_LEN)
     elif opt.input_feed:
         return InputFeedRNNDecoder(opt.rnn_type, opt.brnn,
-                                   opt.dec_layers, opt.rnn_size,
+                                   opt.dec_layers, opt.rnn_size ,
                                    opt.global_attention,
                                    opt.coverage_attn,
                                    opt.context_gate,
@@ -128,6 +149,7 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
         src_embeddings = make_embeddings(model_opt, src_dict,
                                          feature_dicts)
         encoder = make_encoder(model_opt, src_embeddings)
+        vae_encoder = make_encoder(model_opt, src_embeddings)        
     else:
         encoder = ImageEncoder(model_opt.layers,
                                model_opt.brnn,
@@ -145,10 +167,15 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
     if model_opt.share_embeddings:
         tgt_embeddings.word_lut.weight = src_embeddings.word_lut.weight
 
+
     decoder = make_decoder(model_opt, tgt_embeddings)
 
     # Make NMTModel(= encoder + decoder).
-    model = NMTModel(encoder, decoder)
+    if model_opt.decoder_type == "vaernn" or model_opt.encoder_type == "vaernn":
+        vae_encoder =  VAERNNEncoder(model_opt.rnn_type, model_opt.brnn, model_opt.dec_layers, model_opt.rnn_size, model_opt.dropout, tgt_embeddings, hidden_code_len=HIDDEN_CODE_LEN)
+        model = VAEModel(encoder, decoder, vae_encoder)
+    else:
+        model = NMTModel(encoder, decoder)
 
     # Make Generator.
     if not model_opt.copy_attn:

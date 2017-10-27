@@ -39,10 +39,10 @@ def model_opts(parser):
 
     # RNN Options
     parser.add_argument('-encoder_type', type=str, default='rnn',
-                        choices=['rnn', 'brnn', 'mean', 'transformer', 'cnn'],
+                        choices=['rnn', 'brnn', 'mean', 'transformer', 'cnn','vaernn'],
                         help="""Type of encoder layer to use.""")
     parser.add_argument('-decoder_type', type=str, default='rnn',
-                        choices=['rnn', 'transformer', 'cnn'],
+                        choices=['rnn', 'transformer', 'cnn','vaernn'],
                         help='Type of decoder layer to use.')
 
     parser.add_argument('-layers', type=int, default=-1,

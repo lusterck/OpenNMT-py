@@ -17,7 +17,7 @@ import torch.nn as nn
 
 import onmt
 import onmt.modules
-
+from onmt.modules.VAE_Models import VAEModel
 
 class Statistics(object):
     """
@@ -104,6 +104,9 @@ class Trainer(object):
 
             dec_state = None
             _, src_lengths = batch.src
+            
+            tgt_lengths = torch.LongTensor([batch.tgt.size(0) for t in range(batch.tgt.size(1))]).cuda()
+
 
             src = onmt.IO.make_features(batch, 'src')
             tgt_outer = onmt.IO.make_features(batch, 'tgt')
@@ -115,13 +118,20 @@ class Trainer(object):
 
                 # 2. F-prop all but generator.
                 self.model.zero_grad()
-                outputs, attns, dec_state = \
-                    self.model(src, tgt, src_lengths, dec_state)
+                if isinstance(self.model, VAEModel):
+                    outputs, attns, dec_state, mu, logvar, z= self.model(src, tgt, src_lengths, dec_state,tgt_lengths=tgt_lengths)
+                    # 3. Compute loss in shards for memory efficiency.                    
+                    batch_stats = self.train_loss.sharded_compute_loss(
+                            batch, outputs, attns, j,
+                            trunc_size, self.shard_size, mu, logvar, z)
+                
+                else:
+                    outputs, attns, dec_state = self.model(src, tgt, src_lengths, dec_state)
+                    # 3. Compute loss in shards for memory efficiency.
+                    batch_stats = self.train_loss.sharded_compute_loss(
+                            batch, outputs, attns, j,
+                            trunc_size, self.shard_size)
 
-                # 3. Compute loss in shards for memory efficiency.
-                batch_stats = self.train_loss.sharded_compute_loss(
-                        batch, outputs, attns, j,
-                        trunc_size, self.shard_size)
 
                 # 4. Update the parameters and statistics.
                 self.optim.step()
@@ -152,11 +162,16 @@ class Trainer(object):
             tgt = onmt.IO.make_features(batch, 'tgt')
 
             # F-prop through the model.
-            outputs, attns, _ = self.model(src, tgt, src_lengths)
+            if isinstance(self.model, VAEModel):
+                outputs, attns, dec_state, mu, logvar, z= self.model(src, tgt, src_lengths, None,tgt_lengths=None,sample=True)
+            
+                batch_stats = self.valid_loss.monolithic_compute_loss(batch, outputs, attns, mu, logvar, z)
+            else:
+                outputs, attns, _ = self.model(src, tgt, src_lengths)
+                # Compute loss.
+                batch_stats = self.valid_loss.monolithic_compute_loss(
+                        batch, outputs, attns)
 
-            # Compute loss.
-            batch_stats = self.valid_loss.monolithic_compute_loss(
-                    batch, outputs, attns)
 
             # Update statistics.
             stats.update(batch_stats)
