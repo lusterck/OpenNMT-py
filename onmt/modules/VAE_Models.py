@@ -435,9 +435,10 @@ class VAEModel(nn.Module):
             
             # print(z)
         else:
-            z = Variable(torch.randn(src.size(1),self.vae_encoder.hidden_code_len)).cuda()
-            mu=z 
-            logvar=z
+            mu, logvar, z, enc_hidden, context = self.vae_encoder(src, lengths)            
+            # z = Variable(torch.randn(src.size(1),self.vae_encoder.hidden_code_len)).cuda()
+            # mu=z 
+            # logvar=z
         
         tgt = tgt[:-1]  # exclude last target from inputs
         enc_state = self.decoder.init_decoder_state(src, context, enc_hidden, z)
