@@ -3,7 +3,10 @@ import torch.nn as nn
 
 from onmt.modules.UtilClass import BottleLinear
 from onmt.Utils import aeq
-
+from torchsparseattn import Sparsemax, Fusedmax, Oscarmax
+from onmt.modules.StructuredAttention import TreeAttention,MatrixTree
+from torch.autograd import Variable
+import math
 
 class GlobalAttention(nn.Module):
     """
@@ -39,27 +42,40 @@ class GlobalAttention(nn.Module):
     $$a_j = softmax(v_a^T \tanh(W_a q + U_a h_j) )$$.
 
     """
-    def __init__(self, dim, coverage=False, attn_type="dot"):
+    def __init__(self, dim, coverage=False, attn_type="mlp", sm_type='sm'):
         super(GlobalAttention, self).__init__()
 
         self.dim = dim
         self.attn_type = attn_type
-        assert (self.attn_type in ["dot", "general", "mlp"]), (
+        self.sm_type = sm_type
+        assert (self.attn_type in ["dot", "general", "mlp","struct"]), (
                 "Please select a valid attention type.")
 
         if self.attn_type == "general":
             self.linear_in = nn.Linear(dim, dim, bias=False)
-        elif self.attn_type == "mlp":
+        elif self.attn_type in ["mlp"]:
             self.linear_context = BottleLinear(dim, dim, bias=False)
             self.linear_query = nn.Linear(dim, dim, bias=True)
             self.v = BottleLinear(dim, 1, bias=False)
         # mlp wants it with bias
-        out_bias = self.attn_type == "mlp"
+        out_bias = self.attn_type in ["mlp"]
         self.linear_out = nn.Linear(dim*2, dim, bias=out_bias)
+        self.scale = math.sqrt(1 / dim)
 
-        self.sm = nn.Softmax()
+        if self.sm_type == "sparse":
+            self.sm = Sparsemax()
+        elif self.sm_type == "fused":
+            self.sm = Fusedmax(0.1)
+        elif self.sm_type == "oscar":
+            self.sm = Oscarmax(0.01)
+        # mlp wants it with bias
+        else:
+            self.sm = nn.Softmax()
+
         self.tanh = nn.Tanh()
         self.mask = None
+
+        self.dtree = MatrixTree()
 
         if coverage:
             self.linear_cover = nn.Linear(1, dim, bias=False)
@@ -90,6 +106,7 @@ class GlobalAttention(nn.Module):
             h_s_ = h_s.transpose(1, 2)
             # (batch, t_len, d) x (batch, d, s_len) --> (batch, t_len, s_len)
             return torch.bmm(h_t, h_s_)
+
         else:
             dim = self.dim
             wq = self.linear_query(h_t.view(-1, dim))
@@ -105,7 +122,7 @@ class GlobalAttention(nn.Module):
 
             return self.v(wquh.view(-1, dim)).view(tgt_batch, tgt_len, src_len)
 
-    def forward(self, input, context, coverage=None):
+    def forward(self, input, context, coverage=None, lengths=None):
         """
         input (FloatTensor): batch x tgt_len x dim: decoder's rnn's output.
         context (FloatTensor): batch x src_len x dim: src hidden states
@@ -136,18 +153,30 @@ class GlobalAttention(nn.Module):
 
         if coverage is not None:
             cover = coverage.view(-1).unsqueeze(1)
-            context += self.linear_cover(cover).view_as(context)
+            context = context + self.linear_cover(cover).view_as(context)
             context = self.tanh(context)
+    
 
         # compute attention scores, as in Luong et al.
         align = self.score(input, context)
-
+        
+        
+        
         if self.mask is not None:
             mask_ = self.mask.view(batch, 1, sourceL)  # make it broardcastable
             align.data.masked_fill_(mask_, -float('inf'))
 
         # Softmax to normalize attention weights
-        align_vectors = self.sm(align.view(batch*targetL, sourceL))
+        if self.sm_type in ['sparse','oscar','fuse']:
+            lengths=Variable(lengths)
+#             print(lengths)
+            align_vectors = self.sm(align.view(batch*targetL, sourceL),lengths=lengths)
+            
+        elif self.sm_type in ["struct"]:
+            align_vectors = self.dtree(align,None)
+#             print(align_vectors)
+        else:
+            align_vectors = self.sm(align.view(batch*targetL, sourceL))
         align_vectors = align_vectors.view(batch, targetL, sourceL)
 
         # each context vector c_t is the weighted average

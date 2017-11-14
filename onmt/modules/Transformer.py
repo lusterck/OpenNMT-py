@@ -41,7 +41,7 @@ class PositionwiseFeedForward(nn.Module):
 
 class TransformerEncoderLayer(nn.Module):
     def __init__(self, size, dropout,
-                 head_count=8, hidden_size=2048):
+                 head_count=16, hidden_size=2048):
         """
         Args:
             size(int): the dimension of keys/values/queries in
@@ -109,7 +109,7 @@ class TransformerEncoder(EncoderBase):
 
 class TransformerDecoderLayer(nn.Module):
     def __init__(self, size, dropout,
-                 head_count=8, hidden_size=2048):
+                 head_count=16, hidden_size=2048):
         """
         Args:
             size(int): the dimension of keys/values/queries in
@@ -201,7 +201,7 @@ class TransformerDecoder(nn.Module):
                 hidden_size, attn_type=attn_type)
             self._copy = True
 
-    def forward(self, input, context, state):
+    def forward(self, input, context, state,lengths=None):
         """
         Forward through the TransformerDecoder.
         Args:

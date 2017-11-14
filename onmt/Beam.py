@@ -102,7 +102,7 @@ class Beam(object):
 
         # End condition is when top-of-beam is EOS and no global score.
         if self.nextYs[-1][0] == self.vocab.stoi[onmt.IO.EOS_WORD]:
-            # self.allScores.append(self.scores)
+            self.allScores.append(self.scores)
             self.eosTop = True
 
     def done(self):

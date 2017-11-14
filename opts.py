@@ -86,6 +86,10 @@ def model_opts(parser):
                         choices=['dot', 'general', 'mlp'],
                         help="""The attention type to use:
                         dotprot or general (Luong) or MLP (Bahdanau)""")
+    parser.add_argument('-sm', type=str, default='softmax',
+                        choices=['sm','sparse','fused','oscar'],
+                        help="""The attention type to use:
+                        dotprot or general (Luong) or MLP (Bahdanau)""")  
 
     # Genenerator and loss options.
     parser.add_argument('-copy_attn', action="store_true",
@@ -205,7 +209,7 @@ def train_opts(parser):
                         this much if (i) perplexity does not decrease on the
                         validation set or (ii) epoch has gone past
                         start_decay_at""")
-    parser.add_argument('-start_decay_at', type=int, default=8,
+    parser.add_argument('-start_decay_at', type=int, default=7,
                         help="""Start decaying every epoch after and including this
                         epoch""")
     parser.add_argument('-start_checkpoint_at', type=int, default=0,
@@ -242,6 +246,10 @@ def translate_opts(parser):
     parser.add_argument('-batch_size', type=int, default=30,
                         help='Batch size')
     parser.add_argument('-max_sent_length', type=int, default=100,
+                        help='Maximum sentence length.')
+    parser.add_argument('-alpha', type=float, default=0.0,
+                        help='Maximum sentence length.')
+    parser.add_argument('-beta', type=float, default=0.0,
                         help='Maximum sentence length.')
     parser.add_argument('-replace_unk', action="store_true",
                         help="""Replace the generated UNK tokens with the

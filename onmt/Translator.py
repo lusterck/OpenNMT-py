@@ -22,7 +22,7 @@ class Translator(object):
         for arg in dummy_opt:
             if arg not in model_opt:
                 model_opt.__dict__[arg] = dummy_opt[arg]
-
+        print(model_opt)
         self._type = model_opt.encoder_type
         self.copy_attn = model_opt.copy_attn
 
@@ -76,7 +76,7 @@ class Translator(object):
         tt = torch.cuda if self.opt.cuda else torch
         goldScores = tt.FloatTensor(batch.batch_size).fill_(0)
         decOut, decStates, attn = self.model.decoder(
-            tgt_in, context, decStates)
+            tgt_in, context, decStates,lengths=src_lengths)
 
         tgt_pad = self.fields["tgt"].vocab.stoi[onmt.IO.PAD_WORD]
         for dec, tgt in zip(decOut, batch.tgt[1:].data):
@@ -117,7 +117,7 @@ class Translator(object):
         srcMap = rvar(batch.src_map.data)
         decStates.repeat_beam_size_times(beam_size)
         scorer = None
-        # scorer=onmt.GNMTGlobalScorer(0.3, 0.4)
+#         scorer=onmt.GNMTGlobalScorer(self.opt.alpha, self.opt.beta)
         beam = [onmt.Beam(beam_size, n_best=self.opt.n_best,
                           cuda=self.opt.cuda,
                           vocab=self.fields["tgt"].vocab,
@@ -154,7 +154,7 @@ class Translator(object):
 
             # Run one step.
             decOut, decStates, attn = \
-                self.model.decoder(inp, context, decStates)
+                self.model.decoder(inp, context, decStates,lengths=src_lengths.expand(beam_size))
             decOut = decOut.squeeze(0)
             # decOut: beam x rnn_size
 

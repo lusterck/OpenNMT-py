@@ -12,6 +12,7 @@ import onmt
 import onmt.IO
 import opts
 from itertools import takewhile, count
+from tools.visualize_att import plot_attention 
 try:
     from itertools import zip_longest
 except ImportError:
@@ -87,7 +88,7 @@ def main():
                 pred_batch, gold_batch,
                 pred_scores, gold_scores,
                 (sent.squeeze(1) for sent in src.split(1, dim=1)))
-
+       
         for pred_sents, gold_sent, pred_score, gold_score, src_sent in z_batch:
             n_best_preds = [" ".join(pred) for pred in pred_sents[:opt.n_best]]
             out_file.write('\n'.join(n_best_preds))
@@ -119,6 +120,9 @@ def main():
                     for score, sent in zip(pred_score, n_best_preds):
                         os.write(1, bytes("[%.4f] %s\n" % (score, sent),
                                  'UTF-8'))
+        if opt.attn_debug:
+#             print(attn)
+            plot_attention(attn,words,pred_sents[0],filename=sent_number)
 
     report_score('PRED', pred_score_total, pred_words_total)
     if opt.tgt:
@@ -127,6 +131,7 @@ def main():
     if opt.dump_beam:
         json.dump(translator.beam_accum,
                   codecs.open(opt.dump_beam, 'w', 'utf-8'))
+        
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence as pack
 from torch.nn.utils.rnn import pad_packed_sequence as unpack
+# from onmt.modules.SparseAttention import SparseAttention
 
 import onmt
 from onmt.Utils import aeq
@@ -132,9 +133,10 @@ class RNNDecoderBase(nn.Module):
 
         # Set up the standard attention.
         self._coverage = coverage_attn
+
         self.attn = onmt.modules.GlobalAttention(
             hidden_size, coverage=coverage_attn,
-            attn_type=attn_type
+            attn_type=attn_type,sm_type='sparse'
         )
 
         # Set up a separated copy attention layer, if needed.
@@ -145,7 +147,7 @@ class RNNDecoderBase(nn.Module):
             )
             self._copy = True
 
-    def forward(self, input, context, state):
+    def forward(self, input, context, state, lengths=None):
         """
         Forward through the decoder.
         Args:
@@ -172,7 +174,7 @@ class RNNDecoderBase(nn.Module):
 
         # Run the forward pass of the RNN.
         hidden, outputs, attns, coverage = \
-            self._run_forward_pass(input, context, state)
+            self._run_forward_pass(input, context, state, lengths=lengths)
 
         # Update the state with the result.
         final_output = outputs[-1]
@@ -211,7 +213,7 @@ class StdRNNDecoder(RNNDecoderBase):
     Stardard RNN decoder, with Attention.
     Currently no 'coverage_attn' and 'copy_attn' support.
     """
-    def _run_forward_pass(self, input, context, state):
+    def _run_forward_pass(self, input, context, state, lengths=None):
         """
         Private helper for running the specific RNN forward pass.
         Must be overriden by all subclasses.
@@ -254,10 +256,16 @@ class StdRNNDecoder(RNNDecoderBase):
         # END Result Check
 
         # Calculate the attention.
+#         attn_outputs, attn_scores = self.attn(
+#             rnn_output.transpose(0, 1).contiguous(),  # (output_len, batch, d)
+#             context.transpose(0, 1), lengths=lengths                  # (contxt_len, batch, d)
+#         )
+
         attn_outputs, attn_scores = self.attn(
             rnn_output.transpose(0, 1).contiguous(),  # (output_len, batch, d)
-            context.transpose(0, 1)                   # (contxt_len, batch, d)
+            context.transpose(0, 1), lengths=lengths                  # (contxt_len, batch, d)
         )
+        
         attns["std"] = attn_scores
 
         # Calculate the context gate.
@@ -304,7 +312,7 @@ class InputFeedRNNDecoder(RNNDecoderBase):
     """
     Stardard RNN decoder, with Input Feed and Attention.
     """
-    def _run_forward_pass(self, input, context, state):
+    def _run_forward_pass(self, input, context, state,lengths=None):
         """
         See StdRNNDecoder._run_forward_pass() for description
         of arguments and return values.
@@ -339,7 +347,7 @@ class InputFeedRNNDecoder(RNNDecoderBase):
 
             rnn_output, hidden = self.rnn(emb_t, hidden)
             attn_output, attn = self.attn(rnn_output,
-                                          context.transpose(0, 1))
+                                          context.transpose(0, 1), coverage=coverage,lengths=lengths)
             if self.context_gate is not None:
                 output = self.context_gate(
                     emb_t, rnn_output, attn_output
@@ -421,7 +429,7 @@ class NMTModel(nn.Module):
         enc_state = self.decoder.init_decoder_state(src, context, enc_hidden)
         out, dec_state, attns = self.decoder(tgt, context,
                                              enc_state if dec_state is None
-                                             else dec_state)
+                                             else dec_state,lengths=lengths)
         if self.multigpu:
             # Not yet supported on multi-gpu
             dec_state = None
