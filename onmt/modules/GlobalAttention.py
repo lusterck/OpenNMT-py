@@ -167,7 +167,7 @@ class GlobalAttention(nn.Module):
             align.data.masked_fill_(mask_, -float('inf'))
 
         # Softmax to normalize attention weights
-        if self.sm_type in ['sparse','oscar','fuse']:
+        if self.sm_type in ['sparse','oscar','fused']:
             lengths=Variable(lengths)
 #             print(lengths)
             align_vectors = self.sm(align.view(batch*targetL, sourceL),lengths=lengths)

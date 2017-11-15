@@ -136,7 +136,7 @@ class RNNDecoderBase(nn.Module):
 
         self.attn = onmt.modules.GlobalAttention(
             hidden_size, coverage=coverage_attn,
-            attn_type=attn_type,sm_type='sparse'
+            attn_type=attn_type,sm_type='sm'
         )
 
         # Set up a separated copy attention layer, if needed.

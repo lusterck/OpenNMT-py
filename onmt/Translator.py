@@ -176,7 +176,7 @@ class Translator(object):
 
             # (c) Advance each beam.
             for j, b in enumerate(beam):
-                b.advance(out[:, j],  unbottle(attn["std"]).data[:, j])
+                b.advance(out[:, j],  unbottle(attn["copy"]).data[:, j])
                 decStates.beam_update(j, b.getCurrentOrigin(), beam_size)
 
         if "tgt" in batch.__dict__:
